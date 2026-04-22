@@ -80,19 +80,45 @@ def model(x, A, mu, sigma, c0, c1):
 
 
 # -----------------------------
-# FIT (FIXED: adaptive ROI)
+# FIT (LAB-LEVEL CENTROID FIX ONLY)
 # -----------------------------
 def fit_peak_adaptive(x, y, mu0):
 
-    # initial fit window
-    mask = (x > mu0 - 20) & (x < mu0 + 20)
+    search_mask = (x > mu0 - 60) & (x < mu0 + 60)
+
+    x_search = x[search_mask]
+    y_search = y[search_mask]
+
+    if len(x_search) < 10:
+        return None
+
+    # -----------------------------
+    # ONLY CHANGE: centroid-based peak center
+    # -----------------------------
+    y_smooth = np.convolve(y_search, np.ones(5)/5, mode="same")
+
+    threshold = 0.2 * np.max(y_smooth)
+    peak_mask = y_smooth > threshold
+
+    if np.sum(peak_mask) < 5:
+        return None
+
+    x_peak = x_search[peak_mask]
+    y_peak = y_smooth[peak_mask]
+
+    mu0_real = np.sum(x_peak * y_peak) / np.sum(y_peak)
+
+    # -----------------------------
+    # rest unchanged
+    # -----------------------------
+    mask = (x > mu0_real - 35) & (x < mu0_real + 35)
     x0 = x[mask]
     y0 = y[mask]
 
     if len(x0) < 10:
         return None
 
-    p0 = [max(y0), mu0, 1.2, np.median(y0), 0.0]
+    p0 = [max(y0), mu0_real, 1.2, np.median(y0), 0.0]
 
     try:
         popt, _ = curve_fit(model, x0, y0, p0=p0, maxfev=10000)
@@ -101,7 +127,6 @@ def fit_peak_adaptive(x, y, mu0):
 
     A, mu, sigma, c0, c1 = popt
 
-    # adaptive ROI (CRITICAL FIX)
     roi = max(8.0, 3.0 * sigma)
     mask = (x > mu - roi) & (x < mu + roi)
 
@@ -116,6 +141,44 @@ def fit_peak_adaptive(x, y, mu0):
         return popt2
     except:
         return popt
+
+
+# -----------------------------
+# NEW: REAL FWHM FROM DATA
+# -----------------------------
+def fwhm_from_data(x, y, popt):
+
+    A, mu, sigma, c0, c1 = popt
+
+    background = c0 + c1 * x
+    y_net = y - background
+
+    ymax = np.max(y_net)
+    half = ymax / 2.0
+
+    imax = np.argmax(y_net)
+
+    i_left = imax
+    while i_left > 0 and y_net[i_left] > half:
+        i_left -= 1
+
+    x1 = np.interp(
+        half,
+        [y_net[i_left], y_net[i_left + 1]],
+        [x[i_left], x[i_left + 1]]
+    )
+
+    i_right = imax
+    while i_right < len(y_net) - 1 and y_net[i_right] > half:
+        i_right += 1
+
+    x2 = np.interp(
+        half,
+        [y_net[i_right - 1], y_net[i_right]],
+        [x[i_right - 1], x[i_right]]
+    )
+
+    return x2 - x1
 
 
 # -----------------------------
@@ -142,12 +205,10 @@ class SpectrumViewer(QtWidgets.QMainWindow):
         self.last_peak = None
         self.zoom_win = None
 
-        # canvas
         self.figure = Figure()
         self.canvas = FigureCanvas(self.figure)
         self.ax = self.figure.add_subplot(111)
 
-        # ---------------- BUTTONS ----------------
         self.btn_load = QtWidgets.QPushButton("Load spectrum")
         self.btn_full = QtWidgets.QPushButton("Show full spectrum")
         self.btn_peaks = QtWidgets.QPushButton("Find peaks")
@@ -161,7 +222,6 @@ class SpectrumViewer(QtWidgets.QMainWindow):
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(self.canvas)
 
-        # ALL BUTTONS RESTORED
         for b in [
             self.btn_load,
             self.btn_full,
@@ -177,7 +237,6 @@ class SpectrumViewer(QtWidgets.QMainWindow):
         w.setLayout(layout)
         self.setCentralWidget(w)
 
-        # ---------------- CONNECTIONS ----------------
         self.btn_load.clicked.connect(self.load)
         self.btn_full.clicked.connect(self.plot_full)
         self.btn_peaks.clicked.connect(self.find_peaks)
@@ -237,7 +296,7 @@ class SpectrumViewer(QtWidgets.QMainWindow):
         xf = np.linspace(x.min(), x.max(), 400)
         ax.plot(xf, model(xf, *popt), "r--")
 
-        fwhm_val = fwhm(sigma)
+        fwhm_val = fwhm_from_data(x, y, popt)
         res = resolution(fwhm_val, mu)
 
         self.last_peak = {
@@ -270,7 +329,6 @@ class SpectrumViewer(QtWidgets.QMainWindow):
         if path:
             self.figure.savefig(path, dpi=300, bbox_inches="tight")
 
-    # -----------------------------
     def save_peak(self):
         if self.zoom_win is None:
             return
@@ -279,7 +337,6 @@ class SpectrumViewer(QtWidgets.QMainWindow):
         if path:
             self.zoom_win.grab().save(path)
 
-    # -----------------------------
     def save_csv(self):
 
         if self.last_peak is None:
