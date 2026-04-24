@@ -9,19 +9,15 @@ from matplotlib.figure import Figure
 
 from PyQt5 import QtWidgets
 
-
-# -----------------------------
 # DATA
-# -----------------------------
+
 class SpectrumData:
     def __init__(self):
         self.energy = None
         self.counts = None
 
 
-# -----------------------------
 # PARSER
-# -----------------------------
 def parse_spectrum_file(path):
 
     rows = []
@@ -72,16 +68,12 @@ def parse_spectrum_file(path):
     return spec
 
 
-# -----------------------------
 # MODEL
-# -----------------------------
 def model(x, A, mu, sigma, c0, c1):
     return A * np.exp(-(x - mu)**2 / (2 * sigma**2)) + c0 + c1 * x
 
 
-# -----------------------------
-# FIT (LAB-LEVEL CENTROID FIX ONLY)
-# -----------------------------
+# FIT 
 def fit_peak_adaptive(x, y, mu0):
 
     search_mask = (x > mu0 - 60) & (x < mu0 + 60)
@@ -92,9 +84,7 @@ def fit_peak_adaptive(x, y, mu0):
     if len(x_search) < 10:
         return None
 
-    # -----------------------------
-    # ONLY CHANGE: centroid-based peak center
-    # -----------------------------
+
     y_smooth = np.convolve(y_search, np.ones(5)/5, mode="same")
 
     threshold = 0.2 * np.max(y_smooth)
@@ -108,9 +98,6 @@ def fit_peak_adaptive(x, y, mu0):
 
     mu0_real = np.sum(x_peak * y_peak) / np.sum(y_peak)
 
-    # -----------------------------
-    # rest unchanged
-    # -----------------------------
     mask = (x > mu0_real - 35) & (x < mu0_real + 35)
     x0 = x[mask]
     y0 = y[mask]
@@ -142,10 +129,7 @@ def fit_peak_adaptive(x, y, mu0):
     except:
         return popt
 
-
-# -----------------------------
-# NEW: REAL FWHM FROM DATA
-# -----------------------------
+#  FWHM FROM DATA
 def fwhm_from_data(x, y, popt):
 
     A, mu, sigma, c0, c1 = popt
@@ -181,9 +165,7 @@ def fwhm_from_data(x, y, popt):
     return x2 - x1
 
 
-# -----------------------------
 # METRICS
-# -----------------------------
 def fwhm(sigma):
     return 2.35482 * sigma
 
@@ -192,9 +174,8 @@ def resolution(fwhm_val, energy):
     return (fwhm_val / energy) * 100
 
 
-# -----------------------------
 # GUI
-# -----------------------------
+
 class SpectrumViewer(QtWidgets.QMainWindow):
 
     def __init__(self):
@@ -246,7 +227,6 @@ class SpectrumViewer(QtWidgets.QMainWindow):
         self.btn_save_peak.clicked.connect(self.save_peak)
         self.btn_save_csv.clicked.connect(self.save_csv)
 
-    # -----------------------------
     def load(self):
         path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Open spectrum")
         if path:
@@ -260,7 +240,6 @@ class SpectrumViewer(QtWidgets.QMainWindow):
         self.ax.set_ylabel("Counts")
         self.canvas.draw()
 
-    # -----------------------------
     def find_peaks(self):
         peaks, _ = find_peaks(self.data.counts, height=max(self.data.counts)*0.05)
 
@@ -269,7 +248,6 @@ class SpectrumViewer(QtWidgets.QMainWindow):
         self.ax.plot(self.data.energy[peaks], self.data.counts[peaks], "ro")
         self.canvas.draw()
 
-    # -----------------------------
     def show_1332(self):
 
         if self.data is None:
@@ -323,7 +301,6 @@ class SpectrumViewer(QtWidgets.QMainWindow):
 
         self.zoom_win = win
 
-    # -----------------------------
     def save_full(self):
         path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Save full spectrum", "spectrum.png")
         if path:
@@ -352,9 +329,7 @@ class SpectrumViewer(QtWidgets.QMainWindow):
                 f.write(f"{k},{v}\n")
 
 
-# -----------------------------
 # RUN
-# -----------------------------
 if __name__ == "__main__":
     app = QtWidgets.QApplication([])
     w = SpectrumViewer()
