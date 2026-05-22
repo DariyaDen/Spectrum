@@ -84,7 +84,6 @@ def fit_peak_adaptive(x, y, mu0):
     if len(x_search) < 10:
         return None
 
-
     y_smooth = np.convolve(y_search, np.ones(5)/5, mode="same")
 
     threshold = 0.2 * np.max(y_smooth)
@@ -129,7 +128,10 @@ def fit_peak_adaptive(x, y, mu0):
     except:
         return popt
 
-#  FWHM FROM DATA
+
+# =========================================================
+# ✔ ONLY FIXED PART (FWHM)
+# =========================================================
 def fwhm_from_data(x, y, popt):
 
     A, mu, sigma, c0, c1 = popt
@@ -137,32 +139,55 @@ def fwhm_from_data(x, y, popt):
     background = c0 + c1 * x
     y_net = y - background
 
-    ymax = np.max(y_net)
-    half = ymax / 2.0
+    # легке згладжування (мінімально інвазивне)
+    y_s = np.convolve(y_net, np.ones(5)/5, mode="same")
 
-    imax = np.argmax(y_net)
+    imax = np.argmax(y_s)
 
+    # ✔ FIX: стабільна оцінка вершини (замість raw max)
+    window = y_s[max(0, imax-3):min(len(y_s), imax+4)]
+    ymax = np.median(window)
+
+    if ymax <= 0:
+        return np.nan
+
+    half = 0.5 * ymax
+
+    # ---------------- LEFT ----------------
     i_left = imax
-    while i_left > 0 and y_net[i_left] > half:
+    while i_left > 0 and y_s[i_left] > half:
         i_left -= 1
+
+    if i_left <= 0 or i_left >= imax:
+        return np.nan
 
     x1 = np.interp(
         half,
-        [y_net[i_left], y_net[i_left + 1]],
+        [y_s[i_left], y_s[i_left + 1]],
         [x[i_left], x[i_left + 1]]
     )
 
+    # ---------------- RIGHT ----------------
     i_right = imax
-    while i_right < len(y_net) - 1 and y_net[i_right] > half:
+    while i_right < len(y_s) - 1 and y_s[i_right] > half:
         i_right += 1
+
+    if i_right >= len(y_s) - 1 or i_right <= imax:
+        return np.nan
 
     x2 = np.interp(
         half,
-        [y_net[i_right - 1], y_net[i_right]],
+        [y_s[i_right - 1], y_s[i_right]],
         [x[i_right - 1], x[i_right]]
     )
 
-    return x2 - x1
+    width = x2 - x1
+
+    # фізично допустимі межі для HPGe
+    if width <= 0 or width > 60:
+        return np.nan
+
+    return width
 
 
 # METRICS
@@ -174,8 +199,7 @@ def resolution(fwhm_val, energy):
     return (fwhm_val / energy) * 100
 
 
-# GUI
-
+# GUI (НЕ ЗМІНЕНО)
 class SpectrumViewer(QtWidgets.QMainWindow):
 
     def __init__(self):
